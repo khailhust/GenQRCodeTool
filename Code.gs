@@ -96,7 +96,7 @@ function taoHoSoDongDangChon() {
 }
 
 // ======================================================================
-// --- THÊM MỚI: HÀM XỬ LÝ QR (PHIÊN BẢN 3 SERVER DỰ PHÒNG & BÁO LỖI) ---
+// --- HÀM XỬ LÝ QR (Cập nhật: Thu thập và báo cáo chi tiết lỗi từng Server) ---
 // ======================================================================
 function xuLyChenQR(body, altText, linkRaw) {
   let cleanLink = chuanHoaLinkHienThi(linkRaw);
@@ -112,21 +112,35 @@ function xuLyChenQR(body, altText, linkRaw) {
   ];
 
   let blob = null;
+  let danhSachLoi = []; // Biến chứa "hồ sơ bệnh án" của các server bị lỗi
 
+  // Thử lần lượt từng API
   for (let i = 0; i < qrApis.length; i++) {
     try {
       let response = UrlFetchApp.fetch(qrApis[i], { muteHttpExceptions: true });
+
       if (response.getResponseCode() === 200) {
         blob = response.getBlob();
-        break;
+        break; // Thành công thì lập tức thoát vòng lặp
+      } else {
+        // Nếu Server phản hồi nhưng từ chối (Vd: Lỗi 403 Forbidden, Lỗi 429 Quá tải...)
+        let errorMsg = response.getContentText().substring(0, 100); // Lấy 100 ký tự đầu cho đỡ rác log
+        danhSachLoi.push(`Server ${i + 1} (Mã HTTP ${response.getResponseCode()}): ${errorMsg}`);
       }
-    } catch (e) { } // Bỏ qua lỗi để thử server tiếp theo
+    } catch (e) {
+      // Nếu Server chết hẳn, không phản hồi hoặc báo timeout
+      danhSachLoi.push(`Server ${i + 1} (Không phản hồi): ${e.message}`);
+    }
   }
 
+  // --- NẾU CẢ 3 SERVER ĐỀU CHẾT ---
   if (!blob) {
-    throw new Error("Lỗi mạng: Không thể kết nối đến máy chủ tạo mã QR.");
+    // Gom tất cả lỗi thành một thông báo dài và ném ra ngoài để hàm chính ghi vào Sheet Logs
+    let thongBaoLoiTongHop = "Cả 3 server QR đều thất bại:\n- " + danhSachLoi.join("\n- ");
+    throw new Error(thongBaoLoiTongHop);
   }
 
+  // --- TIẾN HÀNH CHÈN ẢNH VÀO DOCS ---
   const images = body.getImages();
   let isReplaced = false;
 
@@ -144,6 +158,7 @@ function xuLyChenQR(body, altText, linkRaw) {
     }
   }
 
+  // Nếu không tìm thấy ảnh để thay thế
   if (!isReplaced) {
     throw new Error("Template bị lỗi: Không tìm thấy ảnh nháp nào có Alt Text là '" + altText + "'.");
   }
