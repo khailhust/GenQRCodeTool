@@ -86,10 +86,14 @@ function taoHoSoDongDangChon() {
     ss.toast("Đã xong hồ sơ cho: " + tenKH, "✅ Hoàn tất", 5);
 
   } catch (e) {
-    Logger.log("Lỗi: " + e.toString());
-    sheet.getRange(rowIndex, 8).setValue("Lỗi: " + e.message);
-    ss.toast("Gặp lỗi: " + e.message, "❌ Thất bại", 5);
+    // --- THÊM MỚI: Lấy dòng đầu tiên của lỗi để hiển thị cho gọn ---
+    let thongBaoNgan = e.message.split('\n')[0];
 
+    Logger.log("Lỗi: " + e.toString());
+    sheet.getRange(rowIndex, 8).setValue("❌ Lỗi: " + thongBaoNgan);
+    ss.toast("Gặp lỗi: " + thongBaoNgan, "❌ Thất bại", 5);
+
+    // Vẫn ghi TOÀN BỘ chi tiết lỗi dài vào Sheet Log ẩn
     ghiLogHeThong(tenKH, "❌ LỖI TẠO MỚI: " + e.message, e.stack);
   }
 }
@@ -293,10 +297,14 @@ function regenToanBoHoSo() {
       ghiLogHeThong(tenKH, "✅ Regen thành công", "Link PDF mới: " + pdfFile.getUrl() + "\n\n" + baoCaoQR);
 
     } catch (e) {
+      // --- THÊM MỚI: Lấy dòng đầu tiên của lỗi để hiển thị cho gọn ---
+      let thongBaoNgan = e.message.split('\n')[0];
+
       Logger.log("Lỗi dòng " + (i+1) + ": " + e.toString());
-      sheet.getRange(i + 1, 8).setValue("❌ Lỗi: " + e.message);
+      sheet.getRange(i + 1, 8).setValue("❌ Lỗi: " + thongBaoNgan);
       SpreadsheetApp.flush();
 
+      // Vẫn ghi TOÀN BỘ chi tiết lỗi dài vào Sheet Log ẩn
       ghiLogHeThong(tenKH, "❌ LỖI REGEN: " + e.message, e.stack);
     }
   }
