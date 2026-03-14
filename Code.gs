@@ -65,8 +65,8 @@ function taoHoSoDongDangChon() {
     body.replaceText("{{DIA_CHI}}", diaChi);
     body.replaceText("{{LINK_DRIVE}}", linkDrive);
 
-    // Tạo QR Code
-    xuLyChenQR(body, "QR_BAN_VE", linkDrive);
+    // --- THÊM MỚI: Hứng báo cáo từ hàm tạo QR ---
+    let baoCaoQR = xuLyChenQR(body, "QR_BAN_VE", linkDrive);
 
     tempDoc.saveAndClose();
 
@@ -77,11 +77,11 @@ function taoHoSoDongDangChon() {
     tempFile.setTrashed(true);
 
     // --- BƯỚC 4: CẬP NHẬT TRẠNG THÁI ---
-    sheet.getRange(rowIndex, 8).setValue("Đã tạo");
+    sheet.getRange(rowIndex, 8).setValue("✅ Đã tạo");
     sheet.getRange(rowIndex, 9).setValue(pdfFile.getUrl());
 
-    // --- THÊM MỚI: GHI LOG THÀNH CÔNG ---
-    ghiLogHeThong(tenKH, "✅ Tạo mới thành công", "Link PDF: " + pdfFile.getUrl());
+    // --- THÊM MỚI: Ghi Log thành công kèm Báo Cáo QR ---
+    ghiLogHeThong(tenKH, "✅ Tạo mới thành công", "Link PDF: " + pdfFile.getUrl() + "\n\n" + baoCaoQR);
 
     ss.toast("Đã xong hồ sơ cho: " + tenKH, "✅ Hoàn tất", 5);
 
@@ -90,7 +90,6 @@ function taoHoSoDongDangChon() {
     sheet.getRange(rowIndex, 8).setValue("Lỗi: " + e.message);
     ss.toast("Gặp lỗi: " + e.message, "❌ Thất bại", 5);
 
-    // --- THÊM MỚI: GHI LOG LỖI ---
     ghiLogHeThong(tenKH, "❌ LỖI TẠO MỚI: " + e.message, e.stack);
   }
 }
@@ -112,7 +111,10 @@ function xuLyChenQR(body, altText, linkRaw) {
   ];
 
   let blob = null;
-  let danhSachLoi = []; // Biến chứa "hồ sơ bệnh án" của các server bị lỗi
+  let danhSachLoi = [];
+
+  // --- THÊM MỚI: Biến lưu server nào đã tạo thành công ---
+  let serverThanhCong = -1;
 
   // Thử lần lượt từng API
   for (let i = 0; i < qrApis.length; i++) {
@@ -121,26 +123,22 @@ function xuLyChenQR(body, altText, linkRaw) {
 
       if (response.getResponseCode() === 200) {
         blob = response.getBlob();
-        break; // Thành công thì lập tức thoát vòng lặp
+        serverThanhCong = i + 1; // --- THÊM MỚI: Ghi nhận vị trí server thành công ---
+        break;
       } else {
-        // Nếu Server phản hồi nhưng từ chối (Vd: Lỗi 403 Forbidden, Lỗi 429 Quá tải...)
-        let errorMsg = response.getContentText().substring(0, 100); // Lấy 100 ký tự đầu cho đỡ rác log
+        let errorMsg = response.getContentText().substring(0, 100);
         danhSachLoi.push(`Server ${i + 1} (Mã HTTP ${response.getResponseCode()}): ${errorMsg}`);
       }
     } catch (e) {
-      // Nếu Server chết hẳn, không phản hồi hoặc báo timeout
       danhSachLoi.push(`Server ${i + 1} (Không phản hồi): ${e.message}`);
     }
   }
 
-  // --- NẾU CẢ 3 SERVER ĐỀU CHẾT ---
   if (!blob) {
-    // Gom tất cả lỗi thành một thông báo dài và ném ra ngoài để hàm chính ghi vào Sheet Logs
     let thongBaoLoiTongHop = "Cả 3 server QR đều thất bại:\n- " + danhSachLoi.join("\n- ");
     throw new Error(thongBaoLoiTongHop);
   }
 
-  // --- TIẾN HÀNH CHÈN ẢNH VÀO DOCS ---
   const images = body.getImages();
   let isReplaced = false;
 
@@ -154,14 +152,21 @@ function xuLyChenQR(body, altText, linkRaw) {
 
       img.removeFromParent();
       isReplaced = true;
-      return;
+      break; // --- THÊM MỚI: Thoát vòng lặp thay thế ảnh khi đã thành công ---
     }
   }
 
-  // Nếu không tìm thấy ảnh để thay thế
   if (!isReplaced) {
     throw new Error("Template bị lỗi: Không tìm thấy ảnh nháp nào có Alt Text là '" + altText + "'.");
   }
+
+  // --- THÊM MỚI: Tạo và trả về chuỗi Báo cáo QR ---
+  let baoCaoQR = `✅ Dùng Server ${serverThanhCong} tạo QR.`;
+  if (danhSachLoi.length > 0) {
+    baoCaoQR += `\n⚠️ Các server đã lỗi bỏ qua:\n- ${danhSachLoi.join("\n- ")}`;
+  }
+
+  return baoCaoQR;
 }
 
 function trichXuatFolderId(link) {
@@ -183,7 +188,6 @@ function chuanHoaLinkHienThi(link) {
 function regenToanBoHoSo() {
   let ui = SpreadsheetApp.getUi();
 
-  // --- 🔒 CHỐT CHẶN BẢO MẬT ADMIN ---
   let passPrompt = ui.prompt(
     '🔒 Yêu cầu quyền Admin',
     'Tính năng này chỉ dành cho Admin.\nVui lòng nhập mã PIN để tiếp tục:',
@@ -271,7 +275,9 @@ function regenToanBoHoSo() {
       body.replaceText("{{DIA_CHI}}", diaChi);
       body.replaceText("{{LINK_DRIVE}}", linkDrive);
 
-      xuLyChenQR(body, "QR_BAN_VE", linkDrive);
+      // --- THÊM MỚI: Hứng báo cáo từ hàm tạo QR ---
+      let baoCaoQR = xuLyChenQR(body, "QR_BAN_VE", linkDrive);
+
       tempDoc.saveAndClose();
 
       dondepFileCu(targetFolder, tenFileMoi);
@@ -283,15 +289,14 @@ function regenToanBoHoSo() {
       sheet.getRange(i + 1, 9).setValue(pdfFile.getUrl());
       SpreadsheetApp.flush();
 
-      // --- THÊM MỚI: GHI LOG THÀNH CÔNG ---
-      ghiLogHeThong(tenKH, "✅ Regen thành công", "Link PDF mới: " + pdfFile.getUrl());
+      // --- THÊM MỚI: Ghi Log thành công kèm Báo Cáo QR ---
+      ghiLogHeThong(tenKH, "✅ Regen thành công", "Link PDF mới: " + pdfFile.getUrl() + "\n\n" + baoCaoQR);
 
     } catch (e) {
       Logger.log("Lỗi dòng " + (i+1) + ": " + e.toString());
       sheet.getRange(i + 1, 8).setValue("❌ Lỗi: " + e.message);
       SpreadsheetApp.flush();
 
-      // --- THÊM MỚI: GHI LOG LỖI ---
       ghiLogHeThong(tenKH, "❌ LỖI REGEN: " + e.message, e.stack);
     }
   }
@@ -319,9 +324,6 @@ function dondepFileCu(folder, tenFile) {
   }
 }
 
-// ======================================================================
-// --- THÊM MỚI: HÀM TẠO NHẬT KÝ (LOGS) HỆ THỐNG ---
-// ======================================================================
 function ghiLogHeThong(tenKhachHang, thongBao, chiTietLoi) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const LOG_SHEET_NAME = "Logs_Hệ_Thống";
@@ -350,7 +352,6 @@ function ghiLogHeThong(tenKhachHang, thongBao, chiTietLoi) {
   ]);
 }
 
-// --- ĐÃ DỌN DẸP: XÓA HÀM onOpen BỊ LẶP, CHỈ GIỮ 1 BẢN CHUẨN ---
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('👉 CÔNG CỤ QR')
